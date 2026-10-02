@@ -2,9 +2,9 @@ name: Build Xash3D Dreamcast
 
 on:
   push:
-    branches: [ "master", "main" ]
+    branches: ["master", "main"]
   pull_request:
-    branches: [ "master", "main" ]
+    branches: ["master", "main"]
   workflow_dispatch:
 
 jobs:
@@ -12,33 +12,48 @@ jobs:
     runs-on: ubuntu-latest
     container:
       image: kazade/dreamcast-sdk:latest
+    env:
+      GIT_TERMINAL_PROMPT: "0"
 
     steps:
-      # 1. Checkout repository
       - name: Checkout repository
         uses: actions/checkout@v4
+        with:
+          submodules: false
 
-      # 2. Fix repository ownership and sync valid submodules
+      - name: Allow git to work in the container
+        run: |
+          git config --global --add safe.directory "$(pwd)"
+          git config --global --add safe.directory /__w/xash3d-fwgs_dc/xash3d-fwgs_dc
+
+      - name: Configure GitHub SSH
+        uses: webfactory/ssh-agent@v0.9.0
+        with:
+          ssh-private-key: ${{ secrets.GH_ACTIONS_SSH_KEY }}
+
       - name: Sync valid submodules
         run: |
-          # Add the security exception for the container environment
-          git config --global --add safe.directory /__w/xash3d-fwgs_dc/xash3d-fwgs_dc
-          
+          set -eux
+          git submodule sync --recursive
           git submodule init
           git submodule deinit -f 3rdparty/dreamcast/GLdc || true
           git submodule deinit -f 3rdparty/dreamcast/kos || true
-          git submodule update --init --recursive
+          git submodule update --init --recursive --depth 1 || true
 
-            # 3. Clone active alternative repositories to replace the deleted links
       - name: Clone missing Dreamcast libraries
         run: |
+          set -eux
+          mkdir -p ~/.ssh
+          ssh-keyscan github.com >> ~/.ssh/known_hosts 2>/dev/null || true
+
           rm -rf 3rdparty/dreamcast/GLdc 3rdparty/dreamcast/kos
-          git clone --depth 1 https://github.com/maximqaxd/GLdc.git 3rdparty/dreamcast/GLdc
-          git clone --depth 1 https://github.com/maximqaxd/KallistiOS.git 3rdparty/dreamcast/kos
-          
-      # 4. Proceed with engine compilation
+
+          git clone --depth 1 git@github.com:maximqaxd/GLdc.git 3rdparty/dreamcast/GLdc
+          git clone --depth 1 git@github.com:maximqaxd/KallistiOS.git 3rdparty/dreamcast/kos
+
       - name: Compile Engine and SDK
         run: |
+          set -eux
           make all
 
       - name: Upload Compiled Binaries
