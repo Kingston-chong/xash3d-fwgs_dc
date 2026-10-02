@@ -97,3 +97,27 @@ You can support the port development for acquiring dev tools at https://boosty.t
 - FWGS team for Xash3D FWGS fork
 - Kazade for GLdc
 - KallistiOS team
+
+
+## Online Dreamcast CDI Build
+
+The repository includes a GitHub Actions workflow at `.github/workflows/dreamcast-cdi.yml`.
+
+The Half-Life `valve` game data should **not** be committed to this public repository. Keep it in a separate **private GitHub repository** with this structure:
+
+```
+half-life-valve-data/
+└── valve/
+    ├── gameinfo.txt
+    ├── pak0.pak
+    ├── ...
+```
+
+Then add these two GitHub Actions repository secrets under **Settings → Secrets and variables → Actions**:
+
+- `HALFLIFE_DATA_REPO` — for example `Kingston-chong/half-life-valve-data`
+- `HALFLIFE_DATA_TOKEN` — a GitHub token that can read that private repository
+
+The workflow downloads the private game data only during the build, runs the Dreamcast build, and publishes `Xash3D_HL.cdi` as a workflow artifact.
+
+Do not upload or commit the `valve` folder to this public source repository.
