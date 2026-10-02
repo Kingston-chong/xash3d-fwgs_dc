@@ -14,13 +14,16 @@ jobs:
       image: kazade/dreamcast-sdk:latest
 
     steps:
-      # 1. Checkout repository without pulling broken submodules automatically
+      # 1. Checkout repository
       - name: Checkout repository
         uses: actions/checkout@v4
 
-      # 2. Manually initialize only the WORKING submodules 
+      # 2. Fix repository ownership and sync valid submodules
       - name: Sync valid submodules
         run: |
+          # Add the security exception for the container environment
+          git config --global --add safe.directory /__w/xash3d-fwgs_dc/xash3d-fwgs_dc
+          
           git submodule init
           git submodule deinit -f 3rdparty/dreamcast/GLdc || true
           git submodule deinit -f 3rdparty/dreamcast/kos || true
