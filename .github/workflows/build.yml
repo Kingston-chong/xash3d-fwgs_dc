@@ -5,24 +5,37 @@ on:
     branches: [ "master", "main" ]
   pull_request:
     branches: [ "master", "main" ]
-  workflow_dispatch: # Allows you to manually trigger the build online
+  workflow_dispatch:
 
 jobs:
   build-dc:
     runs-on: ubuntu-latest
     container:
-      image: kazade/dreamcast-sdk:latest # Contains the KOS toolchain required for Dreamcast compilation
+      image: kazade/dreamcast-sdk:latest
 
     steps:
+      # 1. Checkout repository without pulling broken submodules automatically
       - name: Checkout repository
         uses: actions/checkout@v4
-        with:
-          submodules: recursive
 
+      # 2. Manually initialize only the WORKING submodules 
+      - name: Sync valid submodules
+        run: |
+          git submodule init
+          git submodule deinit -f 3rdparty/dreamcast/GLdc || true
+          git submodule deinit -f 3rdparty/dreamcast/kos || true
+          git submodule update --init --recursive
+
+      # 3. Clone active alternative repositories to replace the deleted links
+      - name: Clone missing Dreamcast libraries
+        run: |
+          rm -rf 3rdparty/dreamcast/GLdc 3rdparty/dreamcast/kos
+          git clone --depth 1 https://github.com 3rdparty/dreamcast/GLdc
+          git clone --depth 1 https://github.com 3rdparty/dreamcast/kos
+
+      # 4. Proceed with engine compilation
       - name: Compile Engine and SDK
         run: |
-          # The repository documentation specifies cloning companion repos if missing, 
-          # or running the Makefile configuration directly.
           make all
 
       - name: Upload Compiled Binaries
