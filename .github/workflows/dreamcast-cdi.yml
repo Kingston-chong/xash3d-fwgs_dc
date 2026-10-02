@@ -8,8 +8,6 @@ on:
 jobs:
   build:
     runs-on: ubuntu-latest
-    container:
-      image: nold360/kallistios-sdk:latest
 
     steps:
       - name: Checkout source
@@ -17,23 +15,7 @@ jobs:
         with:
           submodules: false
 
-      - name: Prepare Dreamcast dependencies
-        shell: bash
-        run: |
-          set -euxo pipefail
-
-          # The original project references custom KOS/GLdc submodules that are
-          # no longer publicly available. The CI image supplies KallistiOS.
-          git config -f .gitmodules --remove-section 'submodule.3rdparty/dreamcast/GLdc' || true
-          git config -f .gitmodules --remove-section 'submodule.3rdparty/dreamcast/kos' || true
-          git submodule sync --recursive
-          git submodule update --init --recursive
-
-          # The Makefile expects these two projects beside xash3d-fwgs_dc.
-          git clone --depth=1 https://github.com/maximqaxd/hlsdk-portable_dc.git ../hlsdk-portable_dc
-          ln -s "$GITHUB_WORKSPACE/3rdparty/mainui" ../mainui_cpp
-
-      - name: Fetch owned Half-Life game data
+      - name: Build inside KallistiOS SDK
         env:
           DATA_REPO: ${{ secrets.HALFLIFE_DATA_REPO }}
           DATA_TOKEN: ${{ secrets.HALFLIFE_DATA_TOKEN }}
@@ -47,17 +29,33 @@ jobs:
             exit 1
           fi
 
-          git clone --depth=1 "https://x-access-token:${DATA_TOKEN}@github.com/${DATA_REPO}.git" ../Half-Life
-          test -d ../Half-Life/valve || {
-            echo "::error::The private game-data repository must contain a top-level valve/ folder."
-            exit 1
-          }
+          docker run --rm \
+            -e DATA_REPO="${DATA_REPO}" \
+            -e DATA_TOKEN="${DATA_TOKEN}" \
+            -e GITHUB_WORKSPACE=/src \
+            -v "${GITHUB_WORKSPACE}:/src" \
+            -w /src \
+            nold360/kallistios-sdk:latest \
+            bash -lc '
+              set -euxo pipefail
 
-      - name: Build Xash3D and CDI
-        shell: bash
-        run: |
-          set -euxo pipefail
-          make all
+              # The original project references custom KOS/GLdc submodules
+              # that are no longer publicly available. The SDK image supplies KOS.
+              git config -f .gitmodules --remove-section "submodule.3rdparty/dreamcast/GLdc" || true
+              git config -f .gitmodules --remove-section "submodule.3rdparty/dreamcast/kos" || true
+              git submodule sync --recursive
+              git submodule update --init --recursive
+
+              # The Makefile expects these projects beside xash3d-fwgs_dc.
+              git clone --depth=1 https://github.com/maximqaxd/hlsdk-portable_dc.git ../hlsdk-portable_dc
+              ln -s "$GITHUB_WORKSPACE/3rdparty/mainui" ../mainui_cpp
+
+              # Download the users own legally obtained Half-Life game data.
+              git clone --depth=1 "https://x-access-token:$DATA_TOKEN@github.com/$DATA_REPO.git" ../Half-Life
+              test -d ../Half-Life/valve
+
+              make all
+            '
 
       - name: Upload Dreamcast CDI
         uses: actions/upload-artifact@v4
