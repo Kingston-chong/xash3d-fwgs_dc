@@ -1,0 +1,68 @@
+name: Build Dreamcast CDI
+
+on:
+  workflow_dispatch:
+  push:
+    branches: [master]
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    container:
+      image: nold360/kallistios-sdk:latest
+
+    steps:
+      - name: Checkout source
+        uses: actions/checkout@v4
+        with:
+          submodules: false
+
+      - name: Prepare Dreamcast dependencies
+        shell: bash
+        run: |
+          set -euxo pipefail
+
+          # The original project references custom KOS/GLdc submodules that are
+          # no longer publicly available. The CI image supplies KallistiOS.
+          git config -f .gitmodules --remove-section 'submodule.3rdparty/dreamcast/GLdc' || true
+          git config -f .gitmodules --remove-section 'submodule.3rdparty/dreamcast/kos' || true
+          git submodule sync --recursive
+          git submodule update --init --recursive
+
+          # The Makefile expects these two projects beside xash3d-fwgs_dc.
+          git clone --depth=1 https://github.com/maximqaxd/hlsdk-portable_dc.git ../hlsdk-portable_dc
+          ln -s "$GITHUB_WORKSPACE/3rdparty/mainui" ../mainui_cpp
+
+      - name: Fetch owned Half-Life game data
+        env:
+          DATA_REPO: ${{ secrets.HALFLIFE_DATA_REPO }}
+          DATA_TOKEN: ${{ secrets.HALFLIFE_DATA_TOKEN }}
+        shell: bash
+        run: |
+          set -euxo pipefail
+
+          if [ -z "${DATA_REPO:-}" ] || [ -z "${DATA_TOKEN:-}" ]; then
+            echo "::error::Configure HALFLIFE_DATA_REPO and HALFLIFE_DATA_TOKEN in the repository Actions secrets."
+            echo "HALFLIFE_DATA_REPO should be your private repository containing the valve/ folder."
+            exit 1
+          fi
+
+          git clone --depth=1 "https://x-access-token:${DATA_TOKEN}@github.com/${DATA_REPO}.git" ../Half-Life
+          test -d ../Half-Life/valve || {
+            echo "::error::The private game-data repository must contain a top-level valve/ folder."
+            exit 1
+          }
+
+      - name: Build Xash3D and CDI
+        shell: bash
+        run: |
+          set -euxo pipefail
+          make all
+
+      - name: Upload Dreamcast CDI
+        uses: actions/upload-artifact@v4
+        with:
+          name: Xash3D-HL-Dreamcast-CDI
+          path: Xash3D_HL.cdi
+          if-no-files-found: error
+          retention-days: 14
