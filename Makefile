@@ -110,13 +110,13 @@ IP.BIN: ip.txt
 # Step 3: Repack game files
 repack: clean-tools tools
 	@echo "Repacking game files..."
-	@$(MAKE) -f scripts/dreamcast/gearbox/repack_valve.mk all
+	@$(MAKE) -f scripts/dreamcast/valve/repack_valve.mk all
 
 # Step 4: Create images
 ds_iso: engine 1ST_READ_DS.BIN 
 	@echo "Creating Dreamshell ISO image..."
 	mkisofs -V XashDC -G build/IP.BIN -r -J -l -o ../xash.iso ../xash3d-hl_repack 
-cdi: engine  
+cdi: repack engine  
 	@echo "Creating CDI image..."
 	mkdcdisc -e xash -D ../xash3d-hl_repack -p build/IP.BIN -N -o ../Xash3D_HL.cdi
 
