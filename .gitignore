@@ -345,3 +345,9 @@ enc_temp_folder/
 
 # ccls langauge server
 .ccls-*
+
+# Dreamcast build output
+Xash3D_HL.cdi
+xash.iso
+xash3d-hl_repack/
+Half-Life/
