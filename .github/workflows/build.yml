@@ -1,53 +1,80 @@
-name: Dreamcast Build
+name: Dreamcast CDI Builder
 
 on:
-  workflow_dispatch: # Allows manual click-to-run execution
+  workflow_dispatch:
+    inputs:
+      valve_url:
+        description: 'Direct Download Link to your downsampled valve.zip (Leave blank if uploading directly to repo)'
+        required: false
+        default: ''
 
 jobs:
-  build-dreamcast:
+  build-cdi:
     runs-on: ubuntu-latest
     container:
-      image: docker.io/kazade/gldc-env:latest # Pre-built toolchain image with KallistiOS
+      image: docker.io/kazade/dreamcast-sdk:latest # Updated to the valid, modern image repository
 
     steps:
       - name: Checkout Code
         uses: actions/checkout@v4
 
-      - name: Set up Environment Variables
+      - name: Install Disc Utilities
         run: |
-          echo "KOS_BASE=/opt/toolchains/dc/kos" >> $GITHUB_ENV
-          echo "KOS_PORTS=/opt/toolchains/dc/kos-ports" >> $GITHUB_ENV
+          apt-get update && apt-get install -y mkisofs genisoimage wget unzip
+          # Fetch modern standalone tool to compile CDI layouts cleanly
+          wget https://github.com -O /usr/local/bin/mkdcdisc
+          chmod +x /usr/local/bin/mkdcdisc
 
-      - name: Apply README Configuration Patches
+      - name: Apply Compiler Path Configuration
         run: |
-          # 1. Modify KOS include/kos/opts.h file count limit
-          sed -i 's/#define FS_CD_MAX_FILES 48/#define FS_CD_MAX_FILES 128/g' /opt/toolchains/dc/kos/include/kos/opts.h
-          
-          # 2. Force compiler flags requested by repo author
-          export KOS_CFLAGS="${KOS_CFLAGS} -Os"
-          
-          # 3. Apply GLDC texture modifications specified in the README
-          # Fix GLDC texture.c FASTCPY to memcpy
-          if [ -f /opt/toolchains/dc/kos-ports/gldc/src/texture.c ]; then
-            sed -i 's/FASTCPY( targetData, conversionBuffer, destBytes);/memcpy( targetData, conversionBuffer, destBytes);/g' /opt/toolchains/dc/kos-ports/gldc/src/texture.c
+          # 1. Modify file handles ceiling limit in KallistiOS profile context
+          if [ -f /opt/toolchains/dc/kos/include/kos/opts.h ]; then
+            sed -i 's/#define FS_CD_MAX_FILES 48/#define FS_CD_MAX_FILES 128/g' /opt/toolchains/dc/kos/include/kos/opts.h
           fi
+          
+          # 2. Adjust optimization mapping parameters requested by repository layout
+          export KOS_CFLAGS="${KOS_CFLAGS} -Os"
 
       - name: Compile Xash3D Engine
         run: |
-          # Load KallistiOS profile context environment
+          # Load environments via the standard image workspace terminal profile
           source /opt/toolchains/dc/kos/environ.sh
           
-          # Execute the project Makefile build sequence
+          # Build filesystem, GL layers, and engine BIN modules
           make all
 
-      - name: Upload Dreamcast Binaries
+      - name: Assemble Disc Structure
+        run: |
+          mkdir -p cdi_root
+          
+          # Move engine binaries into position
+          if [ -f build/1ST_READ.BIN ]; then
+            cp build/1ST_READ.BIN cdi_root/
+          elif [ -f 1ST_READ.BIN ]; then
+            cp 1ST_READ.BIN cdi_root/
+          else
+            echo "Binary fallback check..."
+            find . -name "1ST_READ.BIN" -exec cp {} cdi_root/ \;
+          fi
+          
+          # Process raw game assets inputs
+          if [ ! -z "${{ github.event.inputs.valve_url }}" ]; then
+            wget "${{ github.event.inputs.valve_url }}" -O valve.zip
+            unzip valve.zip -d cdi_root/
+          elif [ -d "valve" ]; then
+            cp -r valve cdi_root/
+          else
+            echo "Warning: No assets bundle processed, creating asset placeholder."
+            mkdir -p cdi_root/valve
+          fi
+
+      - name: Build Bootable CDI Image
+        run: |
+          # Process layout tracking and generate a selfboot CDI image
+          mkdcdisc -d cdi_root -e cdi_root/1ST_READ.BIN -o halflife_dreamcast.cdi -n "Half-Life DC"
+
+      - name: Upload Finished CDI
         uses: actions/upload-artifact@v4
         with:
-          name: xash3d-dreamcast-binaries
-          path: |
-            build/
-            1ST_READ.BIN
-            *.bin
-            *.elf
-          if-no-files-found: warn
-          
+          name: half-life-dreamcast-cdi
+          path: halflife_dreamcast.cdi
