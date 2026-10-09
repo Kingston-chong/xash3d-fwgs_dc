@@ -1,0 +1,53 @@
+name: Dreamcast Build
+
+on:
+  workflow_dispatch: # Allows manual click-to-run execution
+
+jobs:
+  build-dreamcast:
+    runs-on: ubuntu-latest
+    container:
+      image: docker.io/kazade/gldc-env:latest # Pre-built toolchain image with KallistiOS
+
+    steps:
+      - name: Checkout Code
+        uses: actions/checkout@v4
+
+      - name: Set up Environment Variables
+        run: |
+          echo "KOS_BASE=/opt/toolchains/dc/kos" >> $GITHUB_ENV
+          echo "KOS_PORTS=/opt/toolchains/dc/kos-ports" >> $GITHUB_ENV
+
+      - name: Apply README Configuration Patches
+        run: |
+          # 1. Modify KOS include/kos/opts.h file count limit
+          sed -i 's/#define FS_CD_MAX_FILES 48/#define FS_CD_MAX_FILES 128/g' /opt/toolchains/dc/kos/include/kos/opts.h
+          
+          # 2. Force compiler flags requested by repo author
+          export KOS_CFLAGS="${KOS_CFLAGS} -Os"
+          
+          # 3. Apply GLDC texture modifications specified in the README
+          # Fix GLDC texture.c FASTCPY to memcpy
+          if [ -f /opt/toolchains/dc/kos-ports/gldc/src/texture.c ]; then
+            sed -i 's/FASTCPY( targetData, conversionBuffer, destBytes);/memcpy( targetData, conversionBuffer, destBytes);/g' /opt/toolchains/dc/kos-ports/gldc/src/texture.c
+          fi
+
+      - name: Compile Xash3D Engine
+        run: |
+          # Load KallistiOS profile context environment
+          source /opt/toolchains/dc/kos/environ.sh
+          
+          # Execute the project Makefile build sequence
+          make all
+
+      - name: Upload Dreamcast Binaries
+        uses: actions/upload-artifact@v4
+        with:
+          name: xash3d-dreamcast-binaries
+          path: |
+            build/
+            1ST_READ.BIN
+            *.bin
+            *.elf
+          if-no-files-found: warn
+          
